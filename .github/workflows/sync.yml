@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
   issues: write
 
 concurrency:
@@ -30,19 +29,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync upstream
-        id: sync
         env:
           SYNC_GIT_NAME: ${{ vars.SYNC_GIT_NAME }}
           SYNC_GIT_EMAIL: ${{ vars.SYNC_GIT_EMAIL }}
         run: |
           set -o pipefail
           ./scripts/sync-upstream.sh 2>&1 | tee sync.log
-
-      - name: Trigger build
-        if: steps.sync.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run build.yml --ref dev
 
       - name: Create or update failure issue
         if: failure()
@@ -69,7 +61,6 @@ jobs:
             echo
             echo "> 本 Issue 由 CI 自动创建 / 更新。同步脚本失败时不会推送任何提交；"
             echo "> 若为 cherry-pick 冲突，请人工处理，注意不要引入被剔除的提交。"
-            echo "> 若下方日志没有错误，失败可能发生在触发构建步骤；请打开运行页面查看。"
           } > report.md
 
           num="$(gh issue list --repo "$REPO" --state open --limit 100 \

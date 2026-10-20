@@ -78,15 +78,25 @@
 
 ## 5. CI 结构
 
-- `.github/workflows/sync.yml`：每 6 小时 + 手动触发。拉取上游 `dev`，
-  按基线 cherry-pick，跳过被剔除提交和仅改工作流的上游提交；推送后触发构建。
-  失败时自动创建 / 更新 Issue，附运行链接、冲突详情和日志摘录。
-- `.github/workflows/build.yml`：push 到 `dev`、PR、手动触发。先跑策略检查，
-  再矩阵构建 x64 / ARM64；失败时自动创建 / 更新 Issue（PR 除外），
-  附失败任务和日志摘录。
+- `.github/workflows/sync.yml`：每 6 小时 + 手动触发。只拉取上游并按基线 cherry-pick，
+  推送后**不再触发构建**；失败时自动创建 / 更新 Issue，附运行链接、冲突详情和日志摘录。
+- `.github/workflows/build.yml`：PR、手动触发，以及被 `release.yml` 复用调用。
+  不再在每次 push `dev` 时构建；先跑策略检查，再矩阵构建 x64 / ARM64。
+  失败时自动创建 / 更新 Issue（PR 除外），附失败任务和日志摘录。
+- `.github/workflows/release.yml`：每周一 / 周四 03:00 UTC 计划构建一次 Nightly；
+  也支持 push `v*` tag 或手动触发正式 / Beta 发布。计划构建前先查最近一次成功的
+  `release.yml` 运行，若当前 HEAD 已成功发布则跳过；只接受无签名 tag。
+  调用 `build.yml` 以 `Release` / `Beta` 构建 x64 / ARM64，创建或更新 GitHub Release，
+  上传 `PCL2_CE_<config|nightly>_<arch>.exe` 和 `SHA256SUMS`；
+  release notes 由 `git-cliff` 生成，失败时自动创建 / 更新 Issue。
+- 自动构建频率：每周两次计划 Nightly + 发布 tag / 手动发布；PR 只跑策略检查、不构建；
+  上游同步不触发构建。没有新 commit（HEAD 已成功发布）时计划构建直接跳过。
+- 发布方式：Actions → `Release` → Run workflow，填 `vX.Y.Z` 并选 `Release` / `Beta`；
+  或推送一个无签名 tag。`Beta` 自动标记为 prerelease。
 - 旧的 `release-publish.yml`、`mirrorchyan_*.yml`、`reusable-build.yml` 已移除；
   本 fork 不再使用上游的发布 / MirrorChyan / Sigstore 流程。
-- 不要重新引入这些发布工作流，除非明确需要，并同时更新匿名与密钥约束。
+  新的 `release.yml` 只发布自构建产物，不做 Sigstore 签名。
+- 不要重新引入这些上游发布工作流，除非明确需要，并同时更新匿名与密钥约束。
 
 ## 6. 项目要点
 
@@ -107,3 +117,5 @@
 | `.github/upstream-sync-base` | 上次同步到的上游提交 |
 | `.github/workflows/sync.yml` | 自动同步 + 失败 Issue |
 | `.github/workflows/build.yml` | 自动构建 + 失败 Issue |
+| `.github/workflows/release.yml` | Tag / 手动 / 每周 Nightly 发布 |
+| `cliff.toml` | Release changelog 配置（git-cliff） |

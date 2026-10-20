@@ -1,15 +1,6 @@
 name: Build
 
 on:
-  push:
-    branches: [dev]
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - 'LICENCE'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/FUNDING.yml'
-      - '.github/upstream-sync-base'
   pull_request:
     paths-ignore:
       - '**/*.md'
@@ -19,6 +10,13 @@ on:
       - '.github/FUNDING.yml'
       - '.github/upstream-sync-base'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      configuration:
+        description: 'Build configuration: CI, Release, or Beta'
+        required: false
+        default: CI
+        type: string
 
 permissions:
   contents: read
@@ -30,6 +28,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      configuration: ${{ steps.vars.outputs.configuration }}
+    steps:
+      - name: Resolve configuration
+        id: vars
+        env:
+          REQUESTED: ${{ inputs.configuration }}
+        run: |
+          set -euo pipefail
+          config="${REQUESTED:-CI}"
+          case "$config" in
+            CI|Release|Beta) ;;
+            *) echo "::error::Unsupported configuration: $config"; exit 1 ;;
+          esac
+          echo "configuration=$config" >> "$GITHUB_OUTPUT"
+
   policy:
     name: Policy guard
     runs-on: ubuntu-latest
@@ -58,15 +75,16 @@ jobs:
           retention-days: 7
 
   build:
-    name: Build (${{ matrix.architecture }})
-    needs: policy
+    name: Build (${{ matrix.configuration }} / ${{ matrix.architecture }})
+    needs: [policy, prepare]
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - configuration: CI
+          - configuration: ${{ needs.prepare.outputs.configuration }}
             architecture: x64
-          - configuration: CI
+          - configuration: ${{ needs.prepare.outputs.configuration }}
             architecture: ARM64
     runs-on: ubuntu-latest
     env:
@@ -122,7 +140,7 @@ jobs:
 
   report:
     name: Report failure
-    needs: [policy, build]
+    needs: [prepare, policy, build]
     if: failure() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -143,6 +161,7 @@ jobs:
           SHA: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
           POLICY_RESULT: ${{ needs.policy.result }}
           BUILD_RESULT: ${{ needs.build.result }}
         run: |
@@ -155,7 +174,7 @@ jobs:
             echo "- 提交：\`$SHA\`"
             echo "- 事件：\`$EVENT\`"
             echo "- 分支：\`$REF_NAME\`"
-            echo "- 策略检查：\`$POLICY_RESULT\`；构建：\`$BUILD_RESULT\`"
+            echo "- 准备：\`$PREPARE_RESULT\`；策略检查：\`$POLICY_RESULT\`；构建：\`$BUILD_RESULT\`"
             echo
             echo "### 失败任务"
             gh run view "$RUN_ID" --repo "$REPO" --json jobs \
